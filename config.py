@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = Field(default="", description="Anthropic API key")
 
     default_llm_provider: str = Field(default="gemini", description="Default LLM provider")
-    default_llm_model: str = Field(default="gemini-1.5-pro", description="Default LLM model")
+    default_llm_model: str = Field(default="gemini-3-flash-preview", description="Default LLM model")
 
     # ── Embeddings ────────────────────────────────────────────────────────────
     embedding_model: str = Field(
