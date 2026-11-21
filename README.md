@@ -212,7 +212,7 @@ OPENAI_API_KEY=your_openai_api_key_here        # Optional
 ANTHROPIC_API_KEY=your_anthropic_api_key_here  # Optional
 
 DEFAULT_LLM_PROVIDER=gemini
-DEFAULT_LLM_MODEL=gemini-1.5-pro
+DEFAULT_LLM_MODEL=gemini-3-flash-preview
 DATABASE_URL=sqlite+aiosqlite:///./data/agent.db
 CHROMA_DB_PATH=./data/embeddings
 ```
