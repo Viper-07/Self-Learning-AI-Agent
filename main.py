@@ -166,19 +166,35 @@ _UI_HTML = """<!DOCTYPE html>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #090d16;
-      --card-bg: #111827;
-      --border: #1f2937;
-      --accent: #0284c7;
-      --accent-glow: rgba(2, 132, 199, 0.25);
-      --text: #f3f4f6;
-      --text-dim: #9ca3af;
-      --user-msg: #1e293b;
-      --agent-msg: #0f172a;
+      --bg: #000000;
+      --card-bg: #111111;
+      --sidebar: #0d0d0d;
+      --border: #222222;
+      --accent: #ef4444;
+      --accent-glow: rgba(239, 68, 68, 0.25);
+      --accent-hover: #dc2626;
+      --text: #ececec;
+      --text-dim: #8e8e8e;
+      --user-msg: #212121;
+      --agent-msg: #111111;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #000000;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #262626;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #3f3f46;
+    }
     body {
-      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
       background: var(--bg);
       color: var(--text);
       display: flex;
@@ -188,7 +204,7 @@ _UI_HTML = """<!DOCTYPE html>
     /* Sidebar */
     #sidebar {
       width: 280px;
-      background: #0b1120;
+      background: var(--sidebar);
       border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
@@ -201,15 +217,19 @@ _UI_HTML = """<!DOCTYPE html>
       margin-bottom: 24px;
     }
     .brand-icon {
-      font-size: 26px;
-      background: var(--accent-glow);
+      font-size: 24px;
+      background: rgba(239, 68, 68, 0.12);
       padding: 8px;
       border-radius: 12px;
-      border: 1px solid var(--accent);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .brand-title {
       font-weight: 700;
       font-size: 18px;
+      color: #ffffff;
       letter-spacing: 0.5px;
     }
     .brand-subtitle {
@@ -217,11 +237,12 @@ _UI_HTML = """<!DOCTYPE html>
       color: var(--accent);
       text-transform: uppercase;
       font-weight: 600;
+      letter-spacing: 0.8px;
     }
     .new-chat-btn {
-      background: linear-gradient(135deg, #0284c7, #2563eb);
-      color: #fff;
-      border: none;
+      background: #171717;
+      color: #ffffff;
+      border: 1px solid #2e2e2e;
       padding: 12px;
       border-radius: 10px;
       font-weight: 600;
@@ -233,13 +254,19 @@ _UI_HTML = """<!DOCTYPE html>
       margin-bottom: 20px;
       transition: all 0.2s;
     }
-    .new-chat-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+    .new-chat-btn:hover {
+      background: #222222;
+      border-color: var(--accent);
+      color: #ffffff;
+      transform: translateY(-1px);
+    }
     .history-title {
       font-size: 12px;
       text-transform: uppercase;
       color: var(--text-dim);
       margin-bottom: 10px;
       font-weight: 600;
+      letter-spacing: 0.5px;
     }
     #conv-list {
       flex: 1;
@@ -257,10 +284,16 @@ _UI_HTML = """<!DOCTYPE html>
       overflow: hidden;
       text-overflow: ellipsis;
       transition: all 0.15s;
+      border-left: 3px solid transparent;
     }
-    .conv-item:hover, .conv-item.active {
-      background: var(--card-bg);
+    .conv-item:hover {
+      background: #171717;
       color: var(--text);
+    }
+    .conv-item.active {
+      background: #1c1c1c;
+      color: #ffffff;
+      border-left-color: var(--accent);
     }
     .sidebar-links {
       border-top: 1px solid var(--border);
@@ -276,6 +309,7 @@ _UI_HTML = """<!DOCTYPE html>
       display: flex;
       align-items: center;
       gap: 6px;
+      transition: color 0.15s;
     }
     .sidebar-links a:hover { color: var(--accent); }
     /* Main Chat Container */
@@ -292,16 +326,16 @@ _UI_HTML = """<!DOCTYPE html>
       align-items: center;
       justify-content: space-between;
       padding: 0 24px;
-      background: rgba(11, 17, 32, 0.8);
+      background: rgba(0, 0, 0, 0.85);
       backdrop-filter: blur(8px);
     }
     .status-pill {
       display: flex;
       align-items: center;
       gap: 8px;
-      background: #022c22;
-      border: 1px solid #059669;
-      color: #34d399;
+      background: #180808;
+      border: 1px solid #4a1515;
+      color: #fca5a5;
       padding: 4px 12px;
       border-radius: 20px;
       font-size: 12px;
@@ -310,9 +344,9 @@ _UI_HTML = """<!DOCTYPE html>
     .dot {
       width: 7px;
       height: 7px;
-      background: #34d399;
+      background: var(--accent);
       border-radius: 50%;
-      box-shadow: 0 0 8px #34d399;
+      box-shadow: 0 0 8px var(--accent);
     }
     #chat-box {
       flex: 1;
@@ -323,9 +357,9 @@ _UI_HTML = """<!DOCTYPE html>
       gap: 20px;
     }
     .msg {
-      max-width: 80%;
+      max-width: 82%;
       padding: 16px 20px;
-      border-radius: 14px;
+      border-radius: 16px;
       line-height: 1.6;
       font-size: 14.5px;
       animation: fadeIn 0.25s ease-out;
@@ -337,23 +371,74 @@ _UI_HTML = """<!DOCTYPE html>
     .msg.user {
       align-self: flex-end;
       background: var(--user-msg);
-      border: 1px solid #334155;
+      border: 1px solid #2e2e2e;
+      color: #ffffff;
     }
     .msg.agent {
       align-self: flex-start;
       background: var(--agent-msg);
       border: 1px solid var(--border);
-      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.45);
+      color: var(--text);
     }
     .msg-header {
       font-size: 11px;
       color: var(--accent);
       font-weight: 700;
       text-transform: uppercase;
-      margin-bottom: 6px;
+      margin-bottom: 8px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      letter-spacing: 0.5px;
+    }
+    /* Red bullets for lists */
+    .msg ul, ul.red-bullets {
+      list-style-type: none;
+      padding-left: 18px;
+      margin: 8px 0;
+    }
+    .msg ul li, ul.red-bullets li {
+      position: relative;
+      margin-bottom: 6px;
+      padding-left: 4px;
+    }
+    .msg ul li::before, ul.red-bullets li::before {
+      content: "•";
+      color: var(--accent);
+      font-size: 18px;
+      font-weight: 800;
+      position: absolute;
+      left: -14px;
+      top: -2px;
+    }
+    .msg ol {
+      padding-left: 20px;
+      margin: 8px 0;
+    }
+    .msg ol li::marker {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .msg pre {
+      background: #080808;
+      border: 1px solid #222222;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin: 10px 0;
+      overflow-x: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      color: #f3f4f6;
+    }
+    .msg .inline-code {
+      background: #181818;
+      border: 1px solid #2a2a2a;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      color: #fca5a5;
     }
     .typing-dots {
       display: inline-flex;
@@ -369,6 +454,7 @@ _UI_HTML = """<!DOCTYPE html>
       border-radius: 50%;
       display: inline-block;
       animation: dot-pulse 1.4s infinite ease-in-out both;
+      box-shadow: 0 0 6px var(--accent-glow);
     }
     .typing-dots span:nth-child(1) { animation-delay: -0.32s; }
     .typing-dots span:nth-child(2) { animation-delay: -0.16s; }
@@ -376,7 +462,7 @@ _UI_HTML = """<!DOCTYPE html>
     @keyframes dot-pulse {
       0%, 80%, 100% {
         transform: scale(0.35);
-        opacity: 0.3;
+        opacity: 0.35;
       }
       40% {
         transform: scale(1);
@@ -385,9 +471,9 @@ _UI_HTML = """<!DOCTYPE html>
     }
     .tools-accordion {
       margin-top: 12px;
-      background: #090e17;
+      background: #080808;
       border-radius: 8px;
-      border: 1px solid #1e293b;
+      border: 1px solid #222222;
       overflow: hidden;
       font-family: 'JetBrains Mono', monospace;
       font-size: 12px;
@@ -397,11 +483,15 @@ _UI_HTML = """<!DOCTYPE html>
       cursor: pointer;
       color: var(--text-dim);
       user-select: none;
+      transition: color 0.15s;
+    }
+    .tools-summary:hover {
+      color: var(--accent);
     }
     .tools-content {
       padding: 10px 14px;
-      border-top: 1px solid #1e293b;
-      color: #94a3b8;
+      border-top: 1px solid #222222;
+      color: #a1a1aa;
       white-space: pre-wrap;
       word-break: break-all;
       max-height: 200px;
@@ -418,7 +508,7 @@ _UI_HTML = """<!DOCTYPE html>
     .star-btn {
       background: transparent;
       border: none;
-      color: #475569;
+      color: #444444;
       font-size: 16px;
       cursor: pointer;
       transition: color 0.15s;
@@ -428,7 +518,7 @@ _UI_HTML = """<!DOCTYPE html>
     #input-container {
       padding: 20px 24px;
       border-top: 1px solid var(--border);
-      background: rgba(11, 17, 32, 0.9);
+      background: rgba(0, 0, 0, 0.95);
     }
     .suggestion-chips {
       display: flex;
@@ -437,8 +527,8 @@ _UI_HTML = """<!DOCTYPE html>
       overflow-x: auto;
     }
     .chip {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
+      background: #111111;
+      border: 1px solid #262626;
       padding: 6px 12px;
       border-radius: 20px;
       font-size: 12px;
@@ -447,12 +537,16 @@ _UI_HTML = """<!DOCTYPE html>
       white-space: nowrap;
       transition: all 0.15s;
     }
-    .chip:hover { border-color: var(--accent); color: var(--text); }
+    .chip:hover {
+      border-color: var(--accent);
+      color: #ffffff;
+      background: #1a1a1a;
+    }
     .input-box {
       display: flex;
       gap: 12px;
-      background: #090e17;
-      border: 1px solid var(--border);
+      background: #111111;
+      border: 1px solid #2a2a2a;
       border-radius: 12px;
       padding: 6px 8px 6px 16px;
     }
@@ -471,15 +565,18 @@ _UI_HTML = """<!DOCTYPE html>
     }
     #send-btn {
       background: var(--accent);
-      color: #fff;
+      color: #ffffff;
       border: none;
       padding: 10px 18px;
       border-radius: 8px;
       font-weight: 600;
       cursor: pointer;
-      transition: opacity 0.15s;
+      transition: all 0.15s;
     }
-    #send-btn:hover { opacity: 0.9; }
+    #send-btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-1px);
+    }
   </style>
 </head>
 <body>
@@ -515,7 +612,13 @@ _UI_HTML = """<!DOCTYPE html>
     <div id="chat-box">
       <div class="msg agent">
         <div class="msg-header">Sentia Assistant</div>
-        Hello! I am <strong>Sentia</strong>, your autonomous cognitive research assistant. I can plan complex solutions, run Python code, search the web, execute calculations, and remember past interactions.<br><br>How can I assist your research today?
+        Hello! I am <strong>Sentia</strong>, your autonomous cognitive research assistant.<br><br>
+        <ul class="red-bullets">
+          <li>Autonomous planning, tool execution & calculation</li>
+          <li>Live web research & Python code execution</li>
+          <li>Self-learning cognitive memory & evaluation</li>
+        </ul><br>
+        How can I assist your research today?
       </div>
     </div>
 
@@ -576,7 +679,7 @@ _UI_HTML = """<!DOCTYPE html>
         data.messages.forEach(m => {
           const div = document.createElement('div');
           div.className = 'msg ' + (m.role === 'user' ? 'user' : 'agent');
-          div.innerHTML = `<div class="msg-header">${m.role === 'user' ? 'You' : 'Sentia'}</div>` + escapeHtml(m.content);
+          div.innerHTML = `<div class="msg-header">${m.role === 'user' ? 'You' : 'Sentia'}</div>` + (m.role === 'user' ? escapeHtml(m.content) : formatMessage(m.content));
           chatBox.appendChild(div);
         });
         chatBox.scrollTop = chatBox.scrollHeight;
@@ -597,6 +700,36 @@ _UI_HTML = """<!DOCTYPE html>
       return div.innerHTML;
     }
 
+    function formatMessage(text) {
+      if (!text) return '';
+      let safe = escapeHtml(text);
+      safe = safe.replace(/```([\s\S]*?)```/g, (match, code) => `<pre><code>${code.trim()}</code></pre>`);
+      safe = safe.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+      safe = safe.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      const lines = safe.split('\n');
+      let inList = false;
+      let html = '';
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const bulletMatch = line.match(/^(\s*)[*-]\s+(.+)/);
+        if (bulletMatch) {
+          if (!inList) {
+            html += '<ul class="red-bullets">';
+            inList = true;
+          }
+          html += `<li>${bulletMatch[2]}</li>`;
+        } else {
+          if (inList) {
+            html += '</ul>';
+            inList = false;
+          }
+          html += (i > 0 && html !== '' && !html.endsWith('</ul>') && !html.endsWith('</pre>') ? '<br>' : '') + line;
+        }
+      }
+      if (inList) html += '</ul>';
+      return html;
+    }
+
     async function sendMessage() {
       const input = document.getElementById('user-input');
       const text = input.value.trim();
@@ -611,7 +744,7 @@ _UI_HTML = """<!DOCTYPE html>
       userDiv.innerHTML = `<div class="msg-header">You</div>` + escapeHtml(text);
       chatBox.appendChild(userDiv);
 
-      // Loading Placeholder
+      // Loading Placeholder (3 Animated Red Dots)
       const agentDiv = document.createElement('div');
       agentDiv.className = 'msg agent';
       agentDiv.innerHTML = `<div class="msg-header">Sentia</div><div class="typing-dots"><span></span><span></span><span></span></div>`;
@@ -648,7 +781,7 @@ _UI_HTML = """<!DOCTYPE html>
                 ⚙️ Executed ${toolSteps.length} reasoning step(s) & tools [Click to expand]
               </div>
               <div class="tools-content" style="display:none;">` +
-              toolSteps.map(s => `Step ${s.step_number}: ${s.thought.action}\\nInput: ${JSON.stringify(s.thought.action_input)}\\nOutput: ${s.tool_output ? (s.tool_output.result || s.tool_output.error) : 'None'}`).join('\\n\\n') +
+              toolSteps.map(s => `Step ${s.step_number}: ${s.thought.action}\nInput: ${JSON.stringify(s.thought.action_input)}\nOutput: ${s.tool_output ? (s.tool_output.result || s.tool_output.error) : 'None'}`).join('\n\n') +
               `</div></div>`;
           }
         }
@@ -665,7 +798,7 @@ _UI_HTML = """<!DOCTYPE html>
         `;
 
         agentDiv.innerHTML = `<div class="msg-header"><span>Sentia</span><span>${Math.round(data.latency_ms)}ms</span></div>` +
-          escapeHtml(data.answer) + toolsHtml + starsHtml;
+          formatMessage(data.answer) + toolsHtml + starsHtml;
 
       } catch (err) {
         agentDiv.innerHTML = `<div class="msg-header">Sentia Error</div><span style="color:#ef4444;">Error: ${escapeHtml(err.message)}</span>`;
@@ -686,7 +819,7 @@ _UI_HTML = """<!DOCTYPE html>
         });
         if (res.ok) {
           const row = btn.parentElement;
-          row.innerHTML = `<span style="color:#10b981;">✓ Rated ${rating}★ — recorded for continuous learning!</span>`;
+          row.innerHTML = `<span style="color:#ef4444;">✓ Rated ${rating}★ — recorded for continuous learning!</span>`;
         }
       } catch (e) {
         console.error(e);
@@ -994,11 +1127,11 @@ async def run_cli():
 
     console.print(
         Panel(
-            f"[bold cyan]🧠 {settings.agent_name}[/bold cyan] — Autonomous Cognitive Agent\n"
+            f"[bold red]🧠 {settings.agent_name}[/bold red] — Autonomous Cognitive Agent\n"
             f"[dim]Provider: {settings.default_llm_provider} | Model: {settings.default_llm_model}[/dim]\n"
             "[dim]Commands: [bold]:quit[/bold] to exit | [bold]:clear[/bold] to clear session[/dim]",
-            title="[bold green]Sentia Interactive Shell[/bold green]",
-            border_style="green",
+            title="[bold red]Sentia Interactive Shell[/bold red]",
+            border_style="red",
         )
     )
 
@@ -1030,7 +1163,7 @@ async def run_cli():
                 console.print(f"[dim]Cleared session. New session ID: {session_id}[/dim]")
                 continue
 
-            with console.status("", spinner="point", spinner_style="bold cyan"):
+            with console.status("", spinner="point", spinner_style="bold red"):
                 response = await agent.chat(user_message=user_input, session_id=session_id)
 
             # Display reasoning steps if any
@@ -1050,8 +1183,8 @@ async def run_cli():
             console.print(
                 Panel(
                     Markdown(response.answer),
-                    title=f"[bold cyan]{settings.agent_name}[/bold cyan] [dim]({response.latency_ms:.0f}ms)[/dim]",
-                    border_style="cyan",
+                    title=f"[bold red]{settings.agent_name}[/bold red] [dim]({response.latency_ms:.0f}ms)[/dim]",
+                    border_style="red",
                 )
             )
 
@@ -1121,13 +1254,13 @@ def main():
         console = Console()
         console.print(
             Panel(
-                f"[bold green]🚀 {settings.agent_name} Cognitive Agent Server[/bold green]\n\n"
-                f"• Web UI Playground:     [bold cyan]http://localhost:{port}[/bold cyan]\n"
-                f"• Swagger API Docs:      [bold cyan]http://localhost:{port}/docs[/bold cyan]\n"
-                f"• System Health:         [cyan]http://localhost:{port}/health[/cyan]\n"
-                f"• Telemetry Stats:       [cyan]http://localhost:{port}/stats[/cyan]\n\n"
+                f"[bold red]🚀 {settings.agent_name} Cognitive Agent Server[/bold red]\n\n"
+                f"• Web UI Playground:     [bold red]http://localhost:{port}[/bold red]\n"
+                f"• Swagger API Docs:      [bold red]http://localhost:{port}/docs[/bold red]\n"
+                f"• System Health:         [red]http://localhost:{port}/health[/red]\n"
+                f"• Telemetry Stats:       [red]http://localhost:{port}/stats[/red]\n\n"
                 f"[dim]Bound to {host}:{port} — Press CTRL+C to stop[/dim]",
-                border_style="green",
+                border_style="red",
             )
         )
         uvicorn.run(
