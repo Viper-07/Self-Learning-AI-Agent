@@ -355,6 +355,34 @@ _UI_HTML = """<!DOCTYPE html>
       align-items: center;
       justify-content: space-between;
     }
+    .typing-dots {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 0;
+      min-height: 20px;
+    }
+    .typing-dots span {
+      width: 7px;
+      height: 7px;
+      background: var(--accent);
+      border-radius: 50%;
+      display: inline-block;
+      animation: dot-pulse 1.4s infinite ease-in-out both;
+    }
+    .typing-dots span:nth-child(1) { animation-delay: -0.32s; }
+    .typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0s; }
+    @keyframes dot-pulse {
+      0%, 80%, 100% {
+        transform: scale(0.35);
+        opacity: 0.3;
+      }
+      40% {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
     .tools-accordion {
       margin-top: 12px;
       background: #090e17;
@@ -586,7 +614,7 @@ _UI_HTML = """<!DOCTYPE html>
       // Loading Placeholder
       const agentDiv = document.createElement('div');
       agentDiv.className = 'msg agent';
-      agentDiv.innerHTML = `<div class="msg-header">Sentia</div><em>Thinking, planning & researching...</em>`;
+      agentDiv.innerHTML = `<div class="msg-header">Sentia</div><div class="typing-dots"><span></span><span></span><span></span></div>`;
       chatBox.appendChild(agentDiv);
       chatBox.scrollTop = chatBox.scrollHeight;
 
@@ -1002,7 +1030,7 @@ async def run_cli():
                 console.print(f"[dim]Cleared session. New session ID: {session_id}[/dim]")
                 continue
 
-            with console.status(f"[bold cyan]{settings.agent_name} is thinking & researching...[/bold cyan]", spinner="dots"):
+            with console.status("", spinner="point", spinner_style="bold cyan"):
                 response = await agent.chat(user_message=user_input, session_id=session_id)
 
             # Display reasoning steps if any
