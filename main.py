@@ -1,28 +1,32 @@
 """
 main.py — Main application entry point for Sentia Cognitive Agent.
 
-Supports:
-  1. FastAPI web server with REST endpoints:
-     - POST /chat
-     - POST /chat/detailed
-     - POST /feedback
-     - GET  /health
-     - GET  /conversations
-     - GET  /conversations/{conversation_id}
-     - DELETE /conversations/{conversation_id}
-     - GET  /memories
-     - GET  /skills
-     - GET  /tools
-  2. Interactive CLI mode via: python main.py --cli
+Features:
+  1. Interactive Web Playground UI served directly at http://localhost:8000
+  2. Production FastAPI REST Server with endpoints:
+     - POST /chat (supports standard JSON & SSE token streaming)
+     - POST /chat/stream (dedicated Server-Sent Events endpoint)
+     - POST /chat/detailed (full reasoning trace & tool outputs)
+     - POST /feedback (RL feedback loop with 1-5 star ratings)
+     - GET  /health (system status & readiness probe)
+     - GET  /stats (live memory, buffer & tools telemetry)
+     - GET  /conversations & GET /conversations/{id}
+     - DELETE /conversations/{id}
+     - GET  /memories & POST /memories (inject factual knowledge)
+     - GET  /skills & POST /skills (dynamic skill registry)
+     - GET  /tools & POST /tools/execute (test tools directly)
+  3. Interactive Terminal CLI Shell via: python main.py --cli
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import sys
+import json
+import time
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Any, AsyncIterator, Dict, List, Optional
 from uuid import UUID
 
@@ -30,6 +34,7 @@ import structlog
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, StreamingResponse
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -44,6 +49,7 @@ from database.crud import (
     get_messages,
     get_recent_conversations,
     get_recent_memories,
+    save_skill,
 )
 from database.database import close_db, get_db, get_db_session, init_db
 from learning.experience import ExperienceCollector
@@ -56,6 +62,8 @@ from models.schemas import (
     ChatRequest,
     ChatResponse,
     Conversation,
+    CreateMemoryRequest,
+    ExecuteToolRequest,
     FeedbackRequest,
     HealthResponse,
     MemoryItem,
@@ -63,10 +71,13 @@ from models.schemas import (
     Message,
     Skill,
     ToolDefinition,
+    ToolInput,
+    ToolOutput,
 )
 from tools.tool_manager import ToolManager
 
 logger = structlog.get_logger(__name__)
+_SERVER_START_TIME = time.time()
 
 
 def setup_agent_services(settings: Settings):
@@ -114,6 +125,8 @@ def setup_agent_services(settings: Settings):
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Startup and shutdown lifecycle manager."""
+    global _SERVER_START_TIME
+    _SERVER_START_TIME = time.time()
     settings = get_settings()
     logger.info("app.starting", agent_name=settings.agent_name)
 
@@ -141,6 +154,528 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("app.stopped")
 
 
+# ─── Web Playground UI HTML ────────────────────────────────────────────────────
+
+_UI_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentia — Cognitive AI Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #111827;
+      --border: #1f2937;
+      --accent: #0284c7;
+      --accent-glow: rgba(2, 132, 199, 0.25);
+      --text: #f3f4f6;
+      --text-dim: #9ca3af;
+      --user-msg: #1e293b;
+      --agent-msg: #0f172a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    /* Sidebar */
+    #sidebar {
+      width: 280px;
+      background: #0b1120;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 18px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .brand-icon {
+      font-size: 26px;
+      background: var(--accent-glow);
+      padding: 8px;
+      border-radius: 12px;
+      border: 1px solid var(--accent);
+    }
+    .brand-title {
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: 0.5px;
+    }
+    .brand-subtitle {
+      font-size: 11px;
+      color: var(--accent);
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .new-chat-btn {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: #fff;
+      border: none;
+      padding: 12px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 20px;
+      transition: all 0.2s;
+    }
+    .new-chat-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+    .history-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+    #conv-list {
+      flex: 1;
+      overflow-y: auto;
+      list-style: none;
+    }
+    .conv-item {
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      color: var(--text-dim);
+      font-size: 13px;
+      margin-bottom: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: all 0.15s;
+    }
+    .conv-item:hover, .conv-item.active {
+      background: var(--card-bg);
+      color: var(--text);
+    }
+    .sidebar-links {
+      border-top: 1px solid var(--border);
+      padding-top: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 12px;
+    }
+    .sidebar-links a {
+      color: var(--text-dim);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sidebar-links a:hover { color: var(--accent); }
+    /* Main Chat Container */
+    #main-chat {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+    }
+    header {
+      height: 60px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      background: rgba(11, 17, 32, 0.8);
+      backdrop-filter: blur(8px);
+    }
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #022c22;
+      border: 1px solid #059669;
+      color: #34d399;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      background: #34d399;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #34d399;
+    }
+    #chat-box {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .msg {
+      max-width: 80%;
+      padding: 16px 20px;
+      border-radius: 14px;
+      line-height: 1.6;
+      font-size: 14.5px;
+      animation: fadeIn 0.25s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: var(--user-msg);
+      border: 1px solid #334155;
+    }
+    .msg.agent {
+      align-self: flex-start;
+      background: var(--agent-msg);
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    }
+    .msg-header {
+      font-size: 11px;
+      color: var(--accent);
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .tools-accordion {
+      margin-top: 12px;
+      background: #090e17;
+      border-radius: 8px;
+      border: 1px solid #1e293b;
+      overflow: hidden;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+    }
+    .tools-summary {
+      padding: 8px 12px;
+      cursor: pointer;
+      color: var(--text-dim);
+      user-select: none;
+    }
+    .tools-content {
+      padding: 10px 14px;
+      border-top: 1px solid #1e293b;
+      color: #94a3b8;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .rating-row {
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .star-btn {
+      background: transparent;
+      border: none;
+      color: #475569;
+      font-size: 16px;
+      cursor: pointer;
+      transition: color 0.15s;
+    }
+    .star-btn:hover, .star-btn.active { color: #facc15; }
+    /* Input Container */
+    #input-container {
+      padding: 20px 24px;
+      border-top: 1px solid var(--border);
+      background: rgba(11, 17, 32, 0.9);
+    }
+    .suggestion-chips {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      overflow-x: auto;
+    }
+    .chip {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      color: var(--text-dim);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .chip:hover { border-color: var(--accent); color: var(--text); }
+    .input-box {
+      display: flex;
+      gap: 12px;
+      background: #090e17;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 6px 8px 6px 16px;
+    }
+    .input-box:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+    #user-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+    }
+    #send-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    #send-btn:hover { opacity: 0.9; }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <div class="brand">
+      <div class="brand-icon">🧠</div>
+      <div>
+        <div class="brand-title">Sentia</div>
+        <div class="brand-subtitle">Cognitive Agent</div>
+      </div>
+    </div>
+    <button class="new-chat-btn" onclick="startNewChat()">+ New Conversation</button>
+    <div class="history-title">Past Sessions</div>
+    <ul id="conv-list"></ul>
+    <div class="sidebar-links">
+      <a href="/docs" target="_blank">📖 Swagger API Docs</a>
+      <a href="/health" target="_blank">🩺 Health & Readiness</a>
+      <a href="/stats" target="_blank">📊 System Stats</a>
+    </div>
+  </div>
+
+  <div id="main-chat">
+    <header>
+      <div class="status-pill">
+        <div class="dot"></div>
+        <span>Online • gemini-3-flash-preview</span>
+      </div>
+      <div style="font-size: 12px; color: var(--text-dim);">
+        SQLite + ChromaDB Ready
+      </div>
+    </header>
+
+    <div id="chat-box">
+      <div class="msg agent">
+        <div class="msg-header">Sentia Assistant</div>
+        Hello! I am <strong>Sentia</strong>, your autonomous cognitive research assistant. I can plan complex solutions, run Python code, search the web, execute calculations, and remember past interactions.<br><br>How can I assist your research today?
+      </div>
+    </div>
+
+    <div id="input-container">
+      <div class="suggestion-chips">
+        <div class="chip" onclick="useChip('What are the latest breakthroughs in quantum computing?')">🔬 Quantum Computing</div>
+        <div class="chip" onclick="useChip('Calculate 15 * 420 + sqrt(144) using your calculator tool')">🧮 Safe Math</div>
+        <div class="chip" onclick="useChip('Write a Python function to test if 104729 is a prime number')">🐍 Python Test</div>
+      </div>
+      <div class="input-box">
+        <input type="text" id="user-input" placeholder="Ask Sentia anything or give an autonomous task..." autocomplete="off">
+        <button id="send-btn" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentConversationId = null;
+
+    async function loadConversations() {
+      try {
+        const res = await fetch('/conversations?limit=10');
+        if (!res.ok) return;
+        const convs = await res.json();
+        const list = document.getElementById('conv-list');
+        list.innerHTML = '';
+        convs.forEach(c => {
+          const li = document.createElement('li');
+          li.className = 'conv-item' + (c.id === currentConversationId ? ' active' : '');
+          li.textContent = 'Session ' + c.id.slice(0, 8);
+          li.onclick = () => switchConversation(c.id);
+          list.appendChild(li);
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function startNewChat() {
+      currentConversationId = null;
+      document.getElementById('chat-box').innerHTML = `
+        <div class="msg agent">
+          <div class="msg-header">Sentia Assistant</div>
+          New conversation started! Ask me any question or assign a research goal.
+        </div>
+      `;
+      loadConversations();
+    }
+
+    async function switchConversation(id) {
+      currentConversationId = id;
+      try {
+        const res = await fetch('/conversations/' + id);
+        if (!res.ok) return;
+        const data = await res.json();
+        const chatBox = document.getElementById('chat-box');
+        chatBox.innerHTML = '';
+        data.messages.forEach(m => {
+          const div = document.createElement('div');
+          div.className = 'msg ' + (m.role === 'user' ? 'user' : 'agent');
+          div.innerHTML = `<div class="msg-header">${m.role === 'user' ? 'You' : 'Sentia'}</div>` + escapeHtml(m.content);
+          chatBox.appendChild(div);
+        });
+        chatBox.scrollTop = chatBox.scrollHeight;
+        loadConversations();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function useChip(text) {
+      document.getElementById('user-input').value = text;
+      sendMessage();
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('user-input');
+      const text = input.value.trim();
+      if (!text) return;
+
+      input.value = '';
+      const chatBox = document.getElementById('chat-box');
+
+      // User Message
+      const userDiv = document.createElement('div');
+      userDiv.className = 'msg user';
+      userDiv.innerHTML = `<div class="msg-header">You</div>` + escapeHtml(text);
+      chatBox.appendChild(userDiv);
+
+      // Loading Placeholder
+      const agentDiv = document.createElement('div');
+      agentDiv.className = 'msg agent';
+      agentDiv.innerHTML = `<div class="msg-header">Sentia</div><em>Thinking, planning & researching...</em>`;
+      chatBox.appendChild(agentDiv);
+      chatBox.scrollTop = chatBox.scrollHeight;
+
+      try {
+        const res = await fetch('/chat/detailed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: text,
+            conversation_id: currentConversationId
+          })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.detail || 'Server error');
+        }
+
+        const data = await res.json();
+        if (data.metadata && data.metadata.conversation_id) {
+          currentConversationId = data.metadata.conversation_id;
+          loadConversations();
+        }
+
+        let toolsHtml = '';
+        if (data.steps && data.steps.length > 0) {
+          const toolSteps = data.steps.filter(s => s.thought && s.thought.action);
+          if (toolSteps.length > 0) {
+            toolsHtml = `<div class="tools-accordion">
+              <div class="tools-summary" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'block' ? 'none' : 'block'">
+                ⚙️ Executed ${toolSteps.length} reasoning step(s) & tools [Click to expand]
+              </div>
+              <div class="tools-content" style="display:none;">` +
+              toolSteps.map(s => `Step ${s.step_number}: ${s.thought.action}\\nInput: ${JSON.stringify(s.thought.action_input)}\\nOutput: ${s.tool_output ? (s.tool_output.result || s.tool_output.error) : 'None'}`).join('\\n\\n') +
+              `</div></div>`;
+          }
+        }
+
+        const starsHtml = `
+          <div class="rating-row">
+            <span>Rate response:</span>
+            <button class="star-btn" onclick="rate('${data.session_id}', '${data.metadata.message_id || data.session_id}', 1, this)">★</button>
+            <button class="star-btn" onclick="rate('${data.session_id}', '${data.metadata.message_id || data.session_id}', 2, this)">★</button>
+            <button class="star-btn" onclick="rate('${data.session_id}', '${data.metadata.message_id || data.session_id}', 3, this)">★</button>
+            <button class="star-btn" onclick="rate('${data.session_id}', '${data.metadata.message_id || data.session_id}', 4, this)">★</button>
+            <button class="star-btn" onclick="rate('${data.session_id}', '${data.metadata.message_id || data.session_id}', 5, this)">★</button>
+          </div>
+        `;
+
+        agentDiv.innerHTML = `<div class="msg-header"><span>Sentia</span><span>${Math.round(data.latency_ms)}ms</span></div>` +
+          escapeHtml(data.answer) + toolsHtml + starsHtml;
+
+      } catch (err) {
+        agentDiv.innerHTML = `<div class="msg-header">Sentia Error</div><span style="color:#ef4444;">Error: ${escapeHtml(err.message)}</span>`;
+      }
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    async function rate(sessionId, messageId, rating, btn) {
+      try {
+        const res = await fetch('/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: sessionId,
+            message_id: messageId,
+            rating: rating
+          })
+        });
+        if (res.ok) {
+          const row = btn.parentElement;
+          row.innerHTML = `<span style="color:#10b981;">✓ Rated ${rating}★ — recorded for continuous learning!</span>`;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    document.getElementById('user-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') sendMessage();
+    });
+
+    loadConversations();
+  </script>
+</body>
+</html>
+"""
+
+
 # ─── FastAPI Application ───────────────────────────────────────────────────────
 
 
@@ -149,9 +684,10 @@ def create_app() -> FastAPI:
     settings = get_settings()
 
     app = FastAPI(
-        title=f"{settings.agent_name} Cognitive Agent API",
+        title=f"{settings.agent_name} Cognitive Agent REST API",
         description=(
-            "Autonomous Cognitive Architecture for Research, Reasoning, and Continuous Learning."
+            "Autonomous Cognitive Architecture for Research, Reasoning, and Continuous Learning. "
+            "Supports real-time chat, tool execution, knowledge injection, and reinforcement learning."
         ),
         version="1.0.0",
         lifespan=lifespan,
@@ -171,13 +707,14 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # ── Routes ───────────────────────────────────────────────────────────────
+    # ── Interactive Web UI ────────────────────────────────────────────────────
 
-    @app.get("/", include_in_schema=False)
-    async def root_redirect():
-        """Redirect root to interactive API documentation."""
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse(url="/docs")
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    async def web_ui():
+        """Interactive Web Playground UI."""
+        return HTMLResponse(content=_UI_HTML)
+
+    # ── Core System Endpoints ─────────────────────────────────────────────────
 
     @app.get("/health", response_model=HealthResponse, tags=["System"])
     async def health_check() -> HealthResponse:
@@ -189,18 +726,50 @@ def create_app() -> FastAPI:
             llm_provider=settings.default_llm_provider,
         )
 
+    @app.get("/stats", tags=["System"])
+    async def system_stats() -> Dict[str, Any]:
+        """Live system metrics: memory counts, token estimates, tool registry, and uptime."""
+        agent: Agent = app.state.agent
+        tool_mgr: ToolManager = app.state.tool_manager
+        exp_collector: ExperienceCollector = app.state.experience_collector
+
+        uptime_seconds = round(time.time() - _SERVER_START_TIME, 1)
+
+        return {
+            "status": "healthy",
+            "agent_name": settings.agent_name,
+            "llm_provider": settings.default_llm_provider,
+            "llm_model": settings.default_llm_model,
+            "uptime_seconds": uptime_seconds,
+            "memory": agent.memory_stats,
+            "experience_replay_buffer_size": len(exp_collector._buffer),
+            "tools_registered": tool_mgr.list_names(),
+        }
+
+    # ── Agent Chat Endpoints ──────────────────────────────────────────────────
+
     @app.post("/chat", response_model=ChatResponse, tags=["Agent"])
     async def chat(request: ChatRequest) -> ChatResponse:
-        """Send a message to the agent and receive its response."""
+        """Send a message to the agent and receive its response. Supports multi-turn conversation tracking."""
         agent: Agent = app.state.agent
         try:
             resp: AgentResponse = await agent.chat(
                 user_message=request.message,
                 session_id=request.session_id,
+                conversation_id=request.conversation_id,
                 llm_config=request.llm_config,
             )
+            conv_id = resp.metadata.get("conversation_id")
+            msg_id = (
+                UUID(resp.metadata["message_id"])
+                if "message_id" in resp.metadata
+                else None
+            )
+
             return ChatResponse(
                 session_id=resp.session_id,
+                conversation_id=conv_id,
+                message_id=msg_id,
                 answer=resp.answer,
                 steps_taken=len(resp.steps),
                 latency_ms=resp.latency_ms,
@@ -213,14 +782,41 @@ def create_app() -> FastAPI:
                 detail=f"Agent error: {exc}",
             )
 
+    @app.post("/chat/stream", tags=["Agent"])
+    async def chat_stream(request: ChatRequest):
+        """Server-Sent Events (SSE) streaming endpoint: streams answer chunks token-by-token."""
+        agent: Agent = app.state.agent
+
+        async def event_generator():
+            try:
+                async for chunk in agent.stream_chat(
+                    user_message=request.message,
+                    session_id=request.session_id,
+                    llm_config=request.llm_config,
+                ):
+                    yield f"data: {json.dumps({'chunk': chunk})}\\n\\n"
+                yield "data: [DONE]\\n\\n"
+            except Exception as exc:
+                yield f"data: {json.dumps({'error': str(exc)})}\\n\\n"
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+
     @app.post("/chat/detailed", response_model=AgentResponse, tags=["Agent"])
     async def chat_detailed(request: ChatRequest) -> AgentResponse:
-        """Send a message to the agent and receive full trace steps and metadata."""
+        """Send a message and receive full execution trace, reasoning thoughts, and tool inputs/outputs."""
         agent: Agent = app.state.agent
         try:
             return await agent.chat(
                 user_message=request.message,
                 session_id=request.session_id,
+                conversation_id=request.conversation_id,
                 llm_config=request.llm_config,
             )
         except Exception as exc:
@@ -230,16 +826,18 @@ def create_app() -> FastAPI:
                 detail=f"Agent error: {exc}",
             )
 
+    # ── Continuous Learning & Feedback ────────────────────────────────────────
+
     @app.post("/feedback", tags=["Learning"])
     async def submit_feedback(request: FeedbackRequest) -> Dict[str, Any]:
-        """Submit 1-5 rating feedback on an agent response to drive continuous learning."""
+        """Submit 1-5 star rating feedback on an agent response to update the RL policy and experience replay."""
         processor: FeedbackProcessor = app.state.feedback_processor
         try:
             reward = await processor.process(request)
             return {
                 "status": "ok",
                 "derived_reward": round(reward, 3),
-                "message": "Feedback recorded for policy improvement.",
+                "message": "Feedback recorded for continuous learning.",
             }
         except Exception as exc:
             logger.error("api.feedback_error", error=str(exc))
@@ -247,6 +845,8 @@ def create_app() -> FastAPI:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Feedback processing error: {exc}",
             )
+
+    # ── Conversations ─────────────────────────────────────────────────────────
 
     @app.get("/conversations", response_model=List[Conversation], tags=["Conversations"])
     async def list_conversations(
@@ -261,7 +861,7 @@ def create_app() -> FastAPI:
         conversation_id: str,
         db=Depends(get_db),
     ) -> Conversation:
-        """Fetch a specific conversation and all its messages."""
+        """Fetch a specific conversation session and all its messages."""
         conv = await get_conversation(db, conversation_id)
         if not conv:
             raise HTTPException(
@@ -275,7 +875,7 @@ def create_app() -> FastAPI:
         conversation_id: str,
         db=Depends(get_db),
     ) -> Dict[str, Any]:
-        """Delete a conversation and all its messages."""
+        """Delete a conversation session and cascade delete all child messages."""
         deleted = await delete_conversation(db, conversation_id)
         if not deleted:
             raise HTTPException(
@@ -284,25 +884,71 @@ def create_app() -> FastAPI:
             )
         return {"status": "ok", "deleted": conversation_id}
 
+    # ── Memory ────────────────────────────────────────────────────────────────
+
     @app.get("/memories", response_model=List[MemoryItem], tags=["Memory"])
     async def list_memories(
         memory_type: Optional[MemoryType] = None,
         limit: int = Query(20, ge=1, le=100),
         db=Depends(get_db),
     ) -> List[MemoryItem]:
-        """List memories stored in the persistence layer."""
+        """List persistent memories stored across ChromaDB and SQLite."""
         return await get_recent_memories(db, memory_type=memory_type, limit=limit)
+
+    @app.post("/memories", tags=["Memory"])
+    async def inject_memory(request: CreateMemoryRequest) -> Dict[str, Any]:
+        """Inject a factual memory directly into Sentia's long-term vector & relational memory."""
+        agent: Agent = app.state.agent
+        try:
+            mem_id = await agent.memorise(request.content, importance=request.importance)
+            return {
+                "status": "ok",
+                "memory_id": mem_id,
+                "message": "Fact successfully injected into memory.",
+            }
+        except Exception as exc:
+            logger.error("api.inject_memory_error", error=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to inject memory: {exc}",
+            )
+
+    # ── Skills ────────────────────────────────────────────────────────────────
 
     @app.get("/skills", response_model=List[Skill], tags=["Skills"])
     async def list_skills(db=Depends(get_db)) -> List[Skill]:
         """List registered and active skills."""
         return await get_all_skills(db)
 
+    @app.post("/skills", response_model=Skill, tags=["Skills"])
+    async def create_skill(skill: Skill, db=Depends(get_db)) -> Skill:
+        """Register a new active skill in the database repository."""
+        try:
+            await save_skill(db, skill)
+            return skill
+        except Exception as exc:
+            logger.error("api.create_skill_error", error=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to save skill: {exc}",
+            )
+
+    # ── Tools ─────────────────────────────────────────────────────────────────
+
     @app.get("/tools", response_model=List[ToolDefinition], tags=["Tools"])
     async def list_tools() -> List[ToolDefinition]:
-        """List all available tools and their schemas."""
+        """List all available tools and their JSON schemas."""
         tool_mgr: ToolManager = app.state.tool_manager
         return tool_mgr.list_definitions()
+
+    @app.post("/tools/execute", response_model=ToolOutput, tags=["Tools"])
+    async def execute_tool(request: ExecuteToolRequest) -> ToolOutput:
+        """Test and execute a tool directly."""
+        tool_mgr: ToolManager = app.state.tool_manager
+        output = await tool_mgr.execute(
+            ToolInput(tool_name=request.tool_name, parameters=request.parameters)
+        )
+        return output
 
     return app
 
@@ -448,9 +1094,10 @@ def main():
         console.print(
             Panel(
                 f"[bold green]🚀 {settings.agent_name} Cognitive Agent Server[/bold green]\n\n"
-                f"• Web UI / Swagger Docs: [bold cyan]http://localhost:{port}/docs[/bold cyan]\n"
-                f"• Alternative URL:       [cyan]http://127.0.0.1:{port}[/cyan]\n"
-                f"• Health Endpoint:       [cyan]http://localhost:{port}/health[/cyan]\n\n"
+                f"• Web UI Playground:     [bold cyan]http://localhost:{port}[/bold cyan]\n"
+                f"• Swagger API Docs:      [bold cyan]http://localhost:{port}/docs[/bold cyan]\n"
+                f"• System Health:         [cyan]http://localhost:{port}/health[/cyan]\n"
+                f"• Telemetry Stats:       [cyan]http://localhost:{port}/stats[/cyan]\n\n"
                 f"[dim]Bound to {host}:{port} — Press CTRL+C to stop[/dim]",
                 border_style="green",
             )
@@ -465,4 +1112,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

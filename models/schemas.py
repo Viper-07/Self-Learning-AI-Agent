@@ -218,16 +218,30 @@ class Skill(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=10_000)
     session_id: Optional[UUID] = None
+    conversation_id: Optional[str] = None
     llm_config: Optional[LLMConfig] = None
     stream: bool = False
 
 
 class ChatResponse(BaseModel):
     session_id: UUID
+    conversation_id: Optional[str] = None
+    message_id: Optional[UUID] = None
     answer: str
     steps_taken: int
     latency_ms: float
     status: AgentStatus
+
+
+class CreateMemoryRequest(BaseModel):
+    content: str = Field(..., min_length=1, max_length=20_000)
+    importance: float = Field(default=0.7, ge=0.0, le=1.0)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ExecuteToolRequest(BaseModel):
+    tool_name: str
+    parameters: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FeedbackRequest(BaseModel):

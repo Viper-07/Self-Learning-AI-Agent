@@ -251,6 +251,10 @@ class Agent:
             status=status,
             total_tokens_used=total_tokens,
             latency_ms=latency_ms,
+            metadata={
+                "conversation_id": conversation_id,
+                "message_id": str(assistant_msg.id),
+            },
         )
 
         # ── Learn from this interaction ────────────────────────────────────────
